@@ -1,5 +1,8 @@
-//! 应用层 stub：Commit 07 接入 handle
+//! 应用层：单线程事件循环、终端生命周期、命令分发
 
+mod edit;
+mod handle;
+mod mouse;
 mod terminal;
 
 use std::path::PathBuf;
@@ -9,7 +12,6 @@ use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use crate::command::Command;
 use crate::document::Document;
 use crate::error::{EditorError, EditorResult};
 use crate::input::map_key;
@@ -46,11 +48,19 @@ impl App {
             active: 0,
             mode: crate::command::EditorMode::Normal,
             search: SearchState::default(),
-            status: "Ctrl+S save | Ctrl+Q quit".into(),
+            status: "Ctrl+S save | i insert | Ctrl+Q quit".into(),
             prompt: String::new(),
             word_hits: Vec::new(),
             should_quit: false,
         })
+    }
+
+    pub(crate) fn active_doc(&self) -> &Document {
+        &self.documents[self.active]
+    }
+
+    pub(crate) fn active_doc_mut(&mut self) -> &mut Document {
+        &mut self.documents[self.active]
     }
 
     pub fn run(
@@ -87,9 +97,7 @@ impl App {
                     event::read().map_err(|e| EditorError::Io(e.to_string()))?
                 {
                     if key.kind == KeyEventKind::Press {
-                        if map_key(self.mode, key) == Command::Quit {
-                            self.should_quit = true;
-                        }
+                        self.handle(map_key(self.mode, key));
                         needs_redraw = true;
                     }
                 }
