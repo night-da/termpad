@@ -11,12 +11,8 @@ use crate::encoding::{Encoding, LineEnding};
 use crate::error::{EditorError, EditorResult};
 use crate::fold::FoldState;
 use crate::selection::Selection;
+use crate::syntax::{detect_language, Language};
 use crate::view::ViewState;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Language {
-    Plain,
-}
 
 #[derive(Debug)]
 pub struct Document {
@@ -34,13 +30,14 @@ pub struct Document {
 
 impl Document {
     pub fn new_empty(path: Option<PathBuf>) -> Self {
+        let lang = detect_language(path.as_deref());
         Self {
             buffer: GapBuffer::new(),
             cursor: Cursor::new(),
             path,
             dirty: false,
             view: ViewState::new(),
-            lang: Language::Plain,
+            lang,
             encoding: Encoding::Utf8,
             line_ending: LineEnding::Lf,
             folds: FoldState,
@@ -112,7 +109,7 @@ pub fn load_document(path: &Path) -> EditorResult<Document> {
         path: Some(path.to_path_buf()),
         dirty: false,
         view: ViewState::new(),
-        lang: Language::Plain,
+        lang: detect_language(Some(path)),
         encoding,
         line_ending,
         folds: FoldState,

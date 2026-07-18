@@ -1,4 +1,6 @@
-//! Plain 正文渲染 + 选区/搜索底色（Commit 10 起叠加 syntax）
+//! 正文渲染：语法着色 + 搜索/选区底色叠加 + 硬件光标
+//!
+//! 底色优先级（后者覆盖前者）：当前搜索匹配 → 其他匹配 → 选区 → 纯语法
 
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -8,12 +10,19 @@ use ratatui::Frame;
 
 use crate::document::Document;
 use crate::search::{Match, SearchState};
+use crate::selection::Selection;
+use crate::syntax::{highlight_line, style_for, HighlightKind};
 use crate::theme::CcppTheme;
 
 struct LineRenderContext<'a> {
     row: usize,
     search: &'a SearchState,
-    sel_cols: Option<(usize, usize)>,
+    word_hits: &'a [Match],
+    show_ws: bool,
+    selection: &'a Selection,
+    cursor: crate::cursor::Cursor,
+    line_len: usize,
+    syntax: &'a [crate::syntax::Span],
 }
 
 pub fn render_text(
@@ -22,7 +31,7 @@ pub fn render_text(
     doc: &Document,
     visible_map: &[usize],
     search: &SearchState,
-    _word_hits: &[Match],
+    word_hits: &[Match],
 ) {
     let visible_rows = area.height as usize;
     let mut lines = Vec::new();
@@ -33,10 +42,16 @@ pub fn render_text(
         };
         let text = doc.buffer.line(row).unwrap_or_default();
         let line_len = text.chars().count();
+        let syntax = highlight_line(&text, doc.lang);
         let line_ctx = LineRenderContext {
             row,
             search,
-            sel_cols: doc.selection.cols_on_line(row, doc.cursor, line_len),
+            word_hits,
+            show_ws: doc.view.show_whitespace,
+            selection: &doc.selection,
+            cursor: doc.cursor,
+            line_len,
+            syntax: &syntax,
         };
         let mut spans = build_line_spans(&text, &line_ctx);
         if spans.is_empty() {
@@ -44,6 +59,7 @@ pub fn render_text(
         }
         lines.push(Line::from(spans));
     }
+
     let block = Block::default();
     let inner = block.inner(area);
     Paragraph::new(lines).render(inner, frame.buffer_mut());
@@ -63,8 +79,12 @@ pub fn render_text(
 }
 
 fn build_line_spans(raw: &str, ctx: &LineRenderContext<'_>) -> Vec<TextSpan<'static>> {
+    let sel_cols = ctx
+        .selection
+        .cols_on_line(ctx.row, ctx.cursor, ctx.line_len);
+
     if raw.is_empty() {
-        if ctx.sel_cols.is_some() {
+        if sel_cols.is_some() {
             return vec![TextSpan::styled(
                 " ",
                 Style::default().bg(CcppTheme::SELECTION_BG),
@@ -73,14 +93,23 @@ fn build_line_spans(raw: &str, ctx: &LineRenderContext<'_>) -> Vec<TextSpan<'sta
         return vec![TextSpan::raw("")];
     }
 
+    let syntax = ctx.syntax;
     let mut breaks = std::collections::BTreeSet::new();
     breaks.insert(0);
     breaks.insert(raw.len());
+    for hs in syntax {
+        breaks.insert(hs.start.min(raw.len()));
+        breaks.insert(hs.end.min(raw.len()));
+    }
     for m in ctx.search.matches.iter().filter(|m| m.row == ctx.row) {
         breaks.insert(m.col.min(raw.len()));
         breaks.insert((m.col + m.len).min(raw.len()));
     }
-    if let Some((sel_start, sel_end)) = ctx.sel_cols {
+    for m in ctx.word_hits.iter().filter(|m| m.row == ctx.row) {
+        breaks.insert(m.col.min(raw.len()));
+        breaks.insert((m.col + m.len).min(raw.len()));
+    }
+    if let Some((sel_start, sel_end)) = sel_cols {
         breaks.insert(char_col_to_byte(raw, sel_start));
         breaks.insert(char_col_to_byte(raw, sel_end));
     }
@@ -93,37 +122,19 @@ fn build_line_spans(raw: &str, ctx: &LineRenderContext<'_>) -> Vec<TextSpan<'sta
         if start >= end {
             continue;
         }
-        let slice = safe_byte_range(raw, start, end);
-        if slice.is_empty() {
+        let slice_raw = safe_byte_range(raw, start, end);
+        if slice_raw.is_empty() {
             continue;
         }
-        let style = segment_style(start, end, raw, ctx);
-        spans.push(TextSpan::styled(
-            slice.to_string(),
-            Style::default()
-                .fg(CcppTheme::PLAIN)
-                .bg(style.bg.unwrap_or(CcppTheme::EDITOR_BG)),
-        ));
+        let text = if ctx.show_ws {
+            visualize_whitespace(slice_raw)
+        } else {
+            slice_raw.to_string()
+        };
+        let style = segment_style(start, end, raw, syntax, ctx, sel_cols);
+        spans.push(TextSpan::styled(text, style));
     }
     spans
-}
-
-fn segment_style(start: usize, end: usize, line: &str, ctx: &LineRenderContext<'_>) -> Style {
-    if segment_in_match(start, end, ctx.row, ctx.search.current_match()) {
-        return Style::default().bg(CcppTheme::FIND_CURRENT_BG);
-    }
-    if ctx
-        .search
-        .matches
-        .iter()
-        .any(|m| m.row == ctx.row && ranges_overlap(start, end, m.col, m.col + m.len))
-    {
-        return Style::default().bg(CcppTheme::FIND_OTHER_BG);
-    }
-    if segment_in_selection(start, end, line, ctx.sel_cols) {
-        return Style::default().bg(CcppTheme::SELECTION_BG);
-    }
-    Style::default().bg(CcppTheme::EDITOR_BG)
 }
 
 fn char_col_to_byte(line: &str, col: usize) -> usize {
@@ -131,6 +142,46 @@ fn char_col_to_byte(line: &str, col: usize) -> usize {
         .nth(col)
         .map(|(i, _)| i)
         .unwrap_or(line.len())
+}
+
+fn segment_style(
+    start: usize,
+    end: usize,
+    line: &str,
+    syntax: &[crate::syntax::Span],
+    ctx: &LineRenderContext<'_>,
+    sel_cols: Option<(usize, usize)>,
+) -> Style {
+    let mid = start + (end - start) / 2;
+    let kind = syntax
+        .iter()
+        .find(|hs| mid >= hs.start && mid < hs.end)
+        .map(|hs| hs.kind)
+        .unwrap_or(HighlightKind::Plain);
+    let style = style_for(kind);
+
+    if segment_in_match(start, end, ctx.row, ctx.search.current_match()) {
+        return style.bg(CcppTheme::FIND_CURRENT_BG);
+    }
+    if ctx
+        .search
+        .matches
+        .iter()
+        .any(|m| m.row == ctx.row && ranges_overlap(start, end, m.col, m.col + m.len))
+    {
+        return style.bg(CcppTheme::FIND_OTHER_BG);
+    }
+    if segment_in_selection(start, end, line, sel_cols) {
+        return style.bg(CcppTheme::SELECTION_BG);
+    }
+    if ctx
+        .word_hits
+        .iter()
+        .any(|m| m.row == ctx.row && ranges_overlap(start, end, m.col, m.col + m.len))
+    {
+        return style.bg(CcppTheme::WORD_HIGHLIGHT_BG);
+    }
+    style.bg(CcppTheme::EDITOR_BG)
 }
 
 fn segment_in_match(start: usize, end: usize, row: usize, m: Option<&Match>) -> bool {
@@ -181,4 +232,14 @@ fn ceil_char_boundary(text: &str, pos: usize) -> usize {
         pos += 1;
     }
     pos
+}
+
+fn visualize_whitespace(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            ' ' => '·',
+            '\t' => '→',
+            _ => c,
+        })
+        .collect()
 }

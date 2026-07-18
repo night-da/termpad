@@ -13,6 +13,7 @@ mod fold;
 mod input;
 mod search;
 mod selection;
+mod syntax;
 mod theme;
 mod view;
 

@@ -4,8 +4,9 @@ use ratatui::widgets::{Paragraph, Widget};
 use ratatui::Frame;
 
 use crate::command::EditorMode;
-use crate::document::{Document, Language};
+use crate::document::Document;
 use crate::search::SearchState;
+use crate::syntax::Language;
 use crate::theme::CcppTheme;
 
 pub fn render_status(
@@ -25,6 +26,7 @@ pub fn render_status(
     let dirty = if doc.dirty { " +" } else { "" };
     let lang = match doc.lang {
         Language::Plain => "Plain",
+        Language::Rust => "Rust",
     };
     let meta = format!(
         " Ln {}, Col {} | {} | {} | {}",
