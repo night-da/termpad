@@ -69,6 +69,26 @@ impl Document {
         let dirty = if self.dirty { "*" } else { "" };
         format!("{}{dirty}", self.display_name())
     }
+
+    /// 删除当前选区文本；无选区或空选区返回 false
+    pub fn delete_selection(&mut self) -> bool {
+        let head = self.cursor;
+        let Some((start, end)) = self.selection.ordered_range(head) else {
+            return false;
+        };
+        if start.row == end.row && start.col == end.col {
+            self.selection.clear();
+            return false;
+        }
+        let off_start = self.buffer.position_to_offset(start.row, start.col);
+        let off_end = self.buffer.position_to_offset(end.row, end.col);
+        self.buffer.delete_byte_range(off_start, off_end);
+        self.cursor = start;
+        self.cursor.clamp(&self.buffer);
+        self.selection.clear();
+        self.mark_dirty();
+        true
+    }
 }
 
 pub fn load_document(path: &Path) -> EditorResult<Document> {

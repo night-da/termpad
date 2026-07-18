@@ -18,6 +18,7 @@ impl App {
                 Err(e) => self.status = format!("Save failed: {e}"),
             },
             Command::EnterInsert => {
+                self.active_doc_mut().selection.clear();
                 self.mode = EditorMode::Insert;
                 self.status = "INSERT".into();
             }
@@ -40,23 +41,57 @@ impl App {
                 c.page_down(b, 10);
                 c.clamp(b);
             }),
+            Command::SelectLeft => self.move_cursor(true, |c, b| c.move_left(b)),
+            Command::SelectRight => self.move_cursor(true, |c, b| c.move_right(b)),
+            Command::SelectUp => self.move_cursor(true, |c, b| c.move_up(b)),
+            Command::SelectDown => self.move_cursor(true, |c, b| c.move_down(b)),
+            Command::SelectHome => self.move_cursor(true, |c, _| c.move_home()),
+            Command::SelectEnd => self.move_cursor(true, |c, b| c.move_end(b)),
+            Command::SelectPageUp => self.move_cursor(true, |c, b| {
+                c.page_up(10);
+                c.clamp(b);
+            }),
+            Command::SelectPageDown => self.move_cursor(true, |c, b| {
+                c.page_down(b, 10);
+                c.clamp(b);
+            }),
+            Command::MouseDown { row, col } => self.handle_mouse_down(row, col),
+            Command::MouseDrag { row, col } => {
+                let _ = self.handle_mouse_drag(row, col);
+            }
+            Command::MouseUp => {
+                self.mouse_selecting = false;
+                self.selection_drag_start = None;
+                self.mouse_drag_pos = None;
+            }
+            Command::ScrollUp { lines } => self.scroll_viewport(-(lines as i32)),
+            Command::ScrollDown { lines } => self.scroll_viewport(lines as i32),
             Command::EnterColumnInsert => {
                 self.mode = EditorMode::ColumnInsert;
                 self.status = "Column insert (stub until commit 14)".into();
             }
             Command::InsertChar(ch) => {
-                if self.mode == EditorMode::ColumnInsert {
-                    insert_at_column(self.active_doc_mut(), ch);
+                let column_insert = self.mode == EditorMode::ColumnInsert;
+                let doc = self.active_doc_mut();
+                if doc.selection.is_active() {
+                    doc.delete_selection();
+                }
+                if column_insert {
+                    insert_at_column(doc, ch);
                 } else {
-                    let doc = self.active_doc_mut();
                     let off = doc.cursor.offset(&doc.buffer);
                     doc.buffer.insert_char(off, ch);
                     doc.cursor.move_right(&doc.buffer);
                 }
-                self.active_doc_mut().mark_dirty();
+                doc.mark_dirty();
             }
             Command::Backspace => {
                 let doc = self.active_doc_mut();
+                if doc.selection.is_active() {
+                    doc.delete_selection();
+                    doc.mark_dirty();
+                    return;
+                }
                 let off = doc.cursor.offset(&doc.buffer);
                 doc.buffer.delete_char_before(off);
                 doc.cursor.move_left(&doc.buffer);
@@ -64,6 +99,11 @@ impl App {
             }
             Command::Delete => {
                 let doc = self.active_doc_mut();
+                if doc.selection.is_active() {
+                    doc.delete_selection();
+                    doc.mark_dirty();
+                    return;
+                }
                 let off = doc.cursor.offset(&doc.buffer);
                 doc.buffer.delete_char(off);
                 doc.cursor.clamp(&doc.buffer);
@@ -71,6 +111,9 @@ impl App {
             }
             Command::Newline => {
                 let doc = self.active_doc_mut();
+                if doc.selection.is_active() {
+                    doc.delete_selection();
+                }
                 let off = doc.cursor.offset(&doc.buffer);
                 doc.buffer.insert_newline(off);
                 doc.cursor.row += 1;

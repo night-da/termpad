@@ -29,6 +29,9 @@ pub struct App {
     pub prompt: String,
     pub word_hits: Vec<crate::search::Match>,
     pub should_quit: bool,
+    pub mouse_selecting: bool,
+    pub selection_drag_start: Option<crate::cursor::Cursor>,
+    pub mouse_drag_pos: Option<(u16, u16)>,
 }
 
 impl App {
@@ -48,10 +51,13 @@ impl App {
             active: 0,
             mode: crate::command::EditorMode::Normal,
             search: SearchState::default(),
-            status: "Ctrl+S save | i insert | Ctrl+Q quit".into(),
+            status: "Shift+arrows select | Ctrl+S save | Ctrl+Q quit".into(),
             prompt: String::new(),
             word_hits: Vec::new(),
             should_quit: false,
+            mouse_selecting: false,
+            selection_drag_start: None,
+            mouse_drag_pos: None,
         })
     }
 
@@ -90,17 +96,30 @@ impl App {
                 needs_redraw = false;
             }
 
-            if event::poll(Duration::from_millis(250))
+            let poll_ms = if self.drag_autoscroll_active() {
+                35
+            } else {
+                250
+            };
+
+            if event::poll(Duration::from_millis(poll_ms))
                 .map_err(|e| EditorError::Io(e.to_string()))?
             {
-                if let Event::Key(key) =
-                    event::read().map_err(|e| EditorError::Io(e.to_string()))?
-                {
-                    if key.kind == KeyEventKind::Press {
+                match event::read().map_err(|e| EditorError::Io(e.to_string()))? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => {
                         self.handle(map_key(self.mode, key));
                         needs_redraw = true;
                     }
+                    Event::Mouse(mouse) => {
+                        if self.handle_mouse(mouse) {
+                            needs_redraw = true;
+                        }
+                    }
+                    Event::Resize(_, _) => needs_redraw = true,
+                    _ => {}
                 }
+            } else if self.mouse_selecting && self.tick_drag_autoscroll() {
+                needs_redraw = true;
             }
         }
         Ok(())

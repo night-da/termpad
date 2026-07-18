@@ -13,7 +13,10 @@ use crate::document::Document;
 use crate::search::{Match, SearchState};
 use crate::theme::CcppTheme;
 
-pub use layout::{screen_to_cursor, visible_line_indices};
+pub use layout::{
+    cursor_for_drag, drag_scroll_lines, is_in_editor_pane, screen_to_cursor, screen_to_gutter_row,
+    visible_line_indices,
+};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EditorLayout {
