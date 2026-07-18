@@ -43,7 +43,7 @@ impl Document {
             lang: Language::Plain,
             encoding: Encoding::Utf8,
             line_ending: LineEnding::Lf,
-            folds: FoldState::default(),
+            folds: FoldState,
             selection: Selection::default(),
         }
     }
@@ -87,7 +87,7 @@ pub fn load_document(path: &Path) -> EditorResult<Document> {
         lang: Language::Plain,
         encoding,
         line_ending,
-        folds: FoldState::default(),
+        folds: FoldState,
         selection: Selection::default(),
     })
 }

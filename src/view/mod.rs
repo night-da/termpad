@@ -1,7 +1,12 @@
-//! 视口状态 stub：Commit 05 引入 ratatui 后升级 EditorLayout 为 Rect
+//! 视口状态 stub：Commit 06 接入 draw 与子模块
+
+use ratatui::layout::Rect;
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct EditorLayout {}
+pub struct EditorLayout {
+    pub gutter: Rect,
+    pub text: Rect,
+}
 
 #[derive(Debug, Clone)]
 pub struct ViewState {
