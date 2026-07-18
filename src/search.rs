@@ -62,54 +62,56 @@ impl SearchState {
     }
 
     /// 重新扫描 buffer，填充 matches；空 query 时清空
-    pub fn compile(&mut self, buffer: &GapBuffer) {
+    pub fn compile(&mut self, buffer: &GapBuffer) -> Result<(), String> {
         self.matches.clear();
         self.current = None;
         if self.query.is_empty() {
-            return;
+            return Ok(());
         }
         let text = buffer.as_text();
         if self.options.use_regex {
-            self.compile_regex(&text);
+            self.compile_regex(&text)?;
+        } else if self.options.case_insensitive {
+            self.compile_literal_icase(&text)?;
         } else {
             self.compile_literal(&text);
         }
-        if !self.matches.is_empty() {
-            self.current = Some(0);
+        self.set_current_from_direction();
+        Ok(())
+    }
+
+    fn set_current_from_direction(&mut self) {
+        if self.matches.is_empty() {
+            self.current = None;
+        } else {
+            self.current = Some(if self.forward {
+                0
+            } else {
+                self.matches.len() - 1
+            });
         }
     }
 
     fn compile_literal(&mut self, text: &str) {
         for (row, line) in text.lines().enumerate() {
-            let haystack = if self.options.case_insensitive {
-                line.to_lowercase()
-            } else {
-                line.to_string()
-            };
-            let needle = if self.options.case_insensitive {
-                self.query.to_lowercase()
-            } else {
-                self.query.clone()
-            };
             let mut start = 0usize;
-            while let Some(idx) = haystack[start..].find(&needle) {
+            while let Some(idx) = line[start..].find(&self.query) {
                 self.matches.push(Match {
                     row,
                     col: start + idx,
-                    len: needle.len(),
+                    len: self.query.len(),
                 });
-                start += idx + needle.len().max(1);
+                start += idx + self.query.len().max(1);
             }
         }
     }
 
-    fn compile_regex(&mut self, text: &str) {
-        let Ok(re) = RegexBuilder::new(&self.query)
-            .case_insensitive(self.options.case_insensitive)
+    fn compile_literal_icase(&mut self, text: &str) -> Result<(), String> {
+        let pattern = regex::escape(&self.query);
+        let re = RegexBuilder::new(&pattern)
+            .case_insensitive(true)
             .build()
-        else {
-            return;
-        };
+            .map_err(|e| e.to_string())?;
         for (row, line) in text.lines().enumerate() {
             for m in re.find_iter(line) {
                 self.matches.push(Match {
@@ -119,6 +121,24 @@ impl SearchState {
                 });
             }
         }
+        Ok(())
+    }
+
+    fn compile_regex(&mut self, text: &str) -> Result<(), String> {
+        let re = RegexBuilder::new(&self.query)
+            .case_insensitive(self.options.case_insensitive)
+            .build()
+            .map_err(|e| e.to_string())?;
+        for (row, line) in text.lines().enumerate() {
+            for m in re.find_iter(line) {
+                self.matches.push(Match {
+                    row,
+                    col: m.start(),
+                    len: m.end() - m.start(),
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn current_match(&self) -> Option<&Match> {
@@ -141,17 +161,25 @@ impl SearchState {
 
     /// 替换当前匹配并重新 compile（偏移可能变化）
     pub fn replace_current(&mut self, buffer: &mut GapBuffer, replacement: &str) -> bool {
-        let Some(m) = self.current_match().cloned() else {
+        let Some(idx) = self.current else {
+            return false;
+        };
+        let Some(m) = self.matches.get(idx).cloned() else {
             return false;
         };
         self.replace_at(buffer, &m, replacement);
-        self.compile(buffer);
+        let _ = self.compile(buffer);
+        if self.matches.is_empty() {
+            self.current = None;
+        } else {
+            self.current = Some(idx.min(self.matches.len() - 1));
+        }
         true
     }
 
     /// 全部替换；倒序应用以免 byte offset 漂移
     pub fn replace_all(&mut self, buffer: &mut GapBuffer, replacement: &str) -> usize {
-        self.compile(buffer);
+        let _ = self.compile(buffer);
         let mut sorted: Vec<Match> = self.matches.clone();
         // 从文件末尾往前删，保证尚未处理的匹配 offset 仍有效
         sorted.sort_by(|a, b| b.row.cmp(&a.row).then(b.col.cmp(&a.col)));
@@ -159,7 +187,8 @@ impl SearchState {
         for m in sorted {
             self.replace_at(buffer, &m, replacement);
         }
-        self.compile(buffer);
+        self.current = None;
+        let _ = self.compile(buffer);
         count
     }
 
@@ -183,7 +212,7 @@ mod tests {
             forward: true,
             ..Default::default()
         };
-        s.compile(&buf);
+        s.compile(&buf).unwrap();
         assert_eq!(s.matches.len(), 2);
     }
 
@@ -198,8 +227,61 @@ mod tests {
             },
             ..Default::default()
         };
-        s.compile(&buf);
+        s.compile(&buf).unwrap();
         assert_eq!(s.matches.len(), 2);
+    }
+
+    #[test]
+    fn find_regex_line_start() {
+        let buf = GapBuffer::from_str("#define A 1\nint x;\n#define B 2");
+        let mut s = SearchState {
+            query: r"^#define".into(),
+            options: SearchOptions {
+                use_regex: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        s.compile(&buf).unwrap();
+        assert_eq!(s.matches.len(), 2);
+    }
+
+    #[test]
+    fn invalid_regex_returns_error() {
+        let buf = GapBuffer::from_str("abc");
+        let mut s = SearchState {
+            query: "(unclosed".into(),
+            options: SearchOptions {
+                use_regex: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(s.compile(&buf).is_err());
+    }
+
+    #[test]
+    fn replace_on_crlf_buffer() {
+        let mut buf = GapBuffer::from_str("foo\r\nfoo\r\n");
+        let mut s = SearchState {
+            query: "foo".into(),
+            ..Default::default()
+        };
+        s.compile(&buf).unwrap();
+        assert_eq!(s.replace_all(&mut buf, "bar"), 2);
+        assert_eq!(buf.as_text(), "bar\r\nbar\r\n");
+    }
+
+    #[test]
+    fn backward_search_starts_at_last_match() {
+        let buf = GapBuffer::from_str("foo bar foo");
+        let mut s = SearchState {
+            query: "foo".into(),
+            forward: false,
+            ..Default::default()
+        };
+        s.compile(&buf).unwrap();
+        assert_eq!(s.current, Some(1));
     }
 
     #[test]
@@ -233,7 +315,7 @@ mod tests {
             query: "fn".into(),
             ..Default::default()
         };
-        s.compile(&buf);
+        s.compile(&buf).unwrap();
         let m = s.matches[0].clone();
         let mut cur = crate::cursor::Cursor::new();
         cur.set_from_offset(&buf, buf.line_byte_col_to_offset(m.row, m.col));

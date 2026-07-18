@@ -63,39 +63,46 @@ impl GapBuffer {
     /// (row, col) → 字节偏移；col 为字符列
     pub fn position_to_offset(&self, row: usize, col: usize) -> usize {
         let text = self.as_text();
-        let mut offset = 0usize;
-        for (i, line) in text.lines().enumerate() {
+        for (i, (start, line)) in logical_line_slices(&text).into_iter().enumerate() {
             if i == row {
                 let byte_col = line.chars().take(col).map(|c| c.len_utf8()).sum::<usize>();
-                return offset + byte_col;
+                return start + byte_col;
             }
-            offset += line.len() + 1;
-            // 逻辑行以 \n 分隔
         }
-        offset
+        text.len()
     }
 
     /// 字节偏移 → (row, 字符列)
     pub fn offset_to_position(&self, offset: usize) -> (usize, usize) {
         let text = self.as_text();
         let clamped = offset.min(text.len());
-        let before = &text[..clamped];
-        let row = before.matches('\n').count();
-        let col = before.rsplit('\n').next().unwrap_or("").chars().count();
-        (row, col)
+        let lines = logical_line_slices(&text);
+        for (row, (start, line)) in lines.iter().enumerate() {
+            let next_start = lines
+                .get(row + 1)
+                .map(|(s, _)| *s)
+                .unwrap_or(text.len());
+            if clamped < next_start {
+                let byte_in_line = clamped.saturating_sub(*start).min(line.len());
+                let col = line[..byte_in_line].chars().count();
+                return (row, col);
+            }
+        }
+        if let Some((_, line)) = lines.last() {
+            return (lines.len().saturating_sub(1), line.chars().count());
+        }
+        (0, 0)
     }
 
     /// 搜索 Match 专用：col 为行内字节列，非字符列
     pub fn line_byte_col_to_offset(&self, row: usize, byte_col: usize) -> usize {
         let text = self.as_text();
-        let mut offset = 0usize;
-        for (i, line) in text.lines().enumerate() {
+        for (i, (start, line)) in logical_line_slices(&text).into_iter().enumerate() {
             if i == row {
-                return offset + byte_col.min(line.len());
+                return start + byte_col.min(line.len());
             }
-            offset += line.len() + 1;
         }
-        offset
+        text.len()
     }
 
     pub fn insert_str(&mut self, mut pos: usize, s: &str) {
@@ -201,6 +208,29 @@ impl GapBuffer {
     }
 }
 
+/// 与 `str::lines()` 对齐：`(行内容起始字节, 行内容)`，不含 `\r`/`\n` 行尾
+fn logical_line_slices(text: &str) -> Vec<(usize, &str)> {
+    if text.is_empty() {
+        return vec![(0, "")];
+    }
+    let mut lines = Vec::new();
+    let mut line_start = 0usize;
+    for (i, b) in text.bytes().enumerate() {
+        if b == b'\n' {
+            let mut content_end = i;
+            if content_end > line_start && text.as_bytes()[content_end - 1] == b'\r' {
+                content_end -= 1;
+            }
+            lines.push((line_start, &text[line_start..content_end]));
+            line_start = i + 1;
+        }
+    }
+    if line_start <= text.len() {
+        lines.push((line_start, &text[line_start..]));
+    }
+    lines
+}
+
 fn utf8_char_len(first: u8) -> usize {
     if first & 0b1000_0000 == 0 {
         1
@@ -242,6 +272,21 @@ mod tests {
     fn position_roundtrip() {
         let buf = GapBuffer::from_str("hello\nworld");
         let off = buf.position_to_offset(1, 2);
+        assert_eq!(buf.offset_to_position(off), (1, 2));
+    }
+
+    #[test]
+    fn line_byte_col_handles_crlf() {
+        let buf = GapBuffer::from_str("foo\r\nbar");
+        assert_eq!(buf.line_byte_col_to_offset(0, 0), 0);
+        assert_eq!(buf.line_byte_col_to_offset(1, 0), 5);
+        assert_eq!(buf.line_byte_col_to_offset(1, 1), 6);
+    }
+
+    #[test]
+    fn position_roundtrip_crlf() {
+        let buf = GapBuffer::from_str("foo\r\nbar");
+        let off = buf.line_byte_col_to_offset(1, 2);
         assert_eq!(buf.offset_to_position(off), (1, 2));
     }
 

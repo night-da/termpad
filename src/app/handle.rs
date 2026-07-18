@@ -77,9 +77,13 @@ impl App {
                 self.status = "Ctrl+R regex  Ctrl+I icase".into();
             }
             Command::EnterReplaceInput => {
-                self.mode = EditorMode::ReplaceInput;
-                self.prompt = "Replace with: ".into();
-                self.replace_with.clear();
+                if self.search.matches.is_empty() {
+                    self.status = "Search first (/ or Ctrl+F), then press :".into();
+                } else {
+                    self.mode = EditorMode::ReplaceInput;
+                    self.prompt = "Replace with: ".into();
+                    self.replace_with.clear();
+                }
             }
             Command::EnterGotoLine => {
                 self.mode = EditorMode::GotoLine;
@@ -255,11 +259,17 @@ impl App {
             }
             Command::ExecuteSearch => {
                 let i = self.active;
-                self.search.compile(&self.documents[i].buffer);
-                self.goto_match();
-                self.mode = EditorMode::Normal;
-                self.prompt.clear();
-                self.status = format!("Found {} matches", self.search.matches.len());
+                match self.search.compile(&self.documents[i].buffer) {
+                    Ok(()) => {
+                        self.goto_match();
+                        self.mode = EditorMode::Normal;
+                        self.prompt.clear();
+                        self.status = format!("Found {} matches", self.search.matches.len());
+                    }
+                    Err(err) => {
+                        self.status = format!("Invalid regex: {err}");
+                    }
+                }
             }
             Command::NextMatch => {
                 self.search.forward = true;
@@ -279,6 +289,7 @@ impl App {
                     .replace_current(&mut self.documents[i].buffer, &replacement)
                 {
                     self.documents[i].mark_dirty();
+                    self.goto_match();
                     self.status = "Replaced one".into();
                 }
             }
@@ -289,6 +300,7 @@ impl App {
                     .search
                     .replace_all(&mut self.documents[i].buffer, &replacement);
                 self.documents[i].mark_dirty();
+                self.goto_match();
                 self.status = format!("Replaced {n} matches");
             }
             // --- 提示符（跳转行 / 打开路径 / 替换串） ---
