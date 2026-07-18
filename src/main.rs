@@ -1,5 +1,11 @@
 mod buffer;
+mod cursor;
+mod document;
+mod encoding;
 mod error;
+mod fold;
+mod selection;
+mod view;
 
 #[cfg(test)]
 mod smoke {
