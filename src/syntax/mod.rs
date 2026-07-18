@@ -1,3 +1,8 @@
+mod cfamily;
+pub use cfamily::{
+    advance_block_comment_state, highlight_c_line_with_state, highlight_cpp_line_with_state,
+    CfamilyHighlightState,
+};
 mod merge;
 mod rust;
 mod scan;
@@ -9,6 +14,8 @@ use crate::theme::CcppTheme;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
     Plain,
+    C,
+    Cpp,
     Rust,
 }
 
@@ -83,6 +90,8 @@ pub fn highlight_line(line: &str, lang: Language) -> Vec<Span> {
             end: line.len(),
             kind: HighlightKind::Plain,
         }],
+        Language::C => cfamily::highlight_c_line(line),
+        Language::Cpp => cfamily::highlight_cpp_line(line),
         Language::Rust => rust::highlight_rust_line(line),
     }
 }
@@ -91,6 +100,8 @@ pub fn detect_language(path: Option<&std::path::Path>) -> Language {
     path.and_then(|p| p.extension())
         .and_then(|e| e.to_str())
         .map(|ext| match ext.to_ascii_lowercase().as_str() {
+            "c" | "h" => Language::C,
+            "cpp" | "cxx" | "cc" | "hpp" | "hxx" => Language::Cpp,
             "rs" => Language::Rust,
             _ => Language::Plain,
         })
@@ -107,6 +118,34 @@ mod tests {
             detect_language(Some(std::path::Path::new("main.rs"))),
             Language::Rust
         );
+    }
+
+    #[test]
+    fn detects_c_and_cpp_ext() {
+        assert_eq!(
+            detect_language(Some(std::path::Path::new("main.c"))),
+            Language::C
+        );
+        assert_eq!(
+            detect_language(Some(std::path::Path::new("app.cpp"))),
+            Language::Cpp
+        );
+    }
+
+    #[test]
+    fn highlights_ccpp_c_sample_without_panic() {
+        let text = include_str!("../../demos/demo.c");
+        for line in text.lines() {
+            let _ = highlight_line(line, Language::C);
+        }
+    }
+
+    #[test]
+    fn highlights_ccpp_cpp_sample_without_panic() {
+        let text = include_str!("../../demos/demo.cpp");
+        for line in text.lines() {
+            let _ = highlight_line(line, Language::Cpp);
+        }
     }
 
     #[test]

@@ -26,6 +26,8 @@ pub fn render_status(
     let dirty = if doc.dirty { " +" } else { "" };
     let lang = match doc.lang {
         Language::Plain => "Plain",
+        Language::C => "C",
+        Language::Cpp => "C++",
         Language::Rust => "Rust",
     };
     let meta = format!(

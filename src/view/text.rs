@@ -11,7 +11,10 @@ use ratatui::Frame;
 use crate::document::Document;
 use crate::search::{Match, SearchState};
 use crate::selection::Selection;
-use crate::syntax::{highlight_line, style_for, HighlightKind};
+use crate::syntax::{
+    advance_block_comment_state, highlight_c_line_with_state, highlight_cpp_line_with_state,
+    highlight_line, style_for, CfamilyHighlightState, HighlightKind, Language,
+};
 use crate::theme::CcppTheme;
 
 struct LineRenderContext<'a> {
@@ -34,6 +37,17 @@ pub fn render_text(
     word_hits: &[Match],
 ) {
     let visible_rows = area.height as usize;
+    let mut cf_state = CfamilyHighlightState::default();
+    if matches!(doc.lang, Language::C | Language::Cpp) {
+        // C/C++ 块注释跨行：从文件头扫到视口首行，否则块注释状态错误
+        if let Some(&first_visible) = visible_map.get(doc.view.scroll_row) {
+            for row in 0..first_visible {
+                if let Some(line) = doc.buffer.line(row) {
+                    advance_block_comment_state(&line, &mut cf_state);
+                }
+            }
+        }
+    }
     let mut lines = Vec::new();
     for i in 0..visible_rows {
         let Some(&row) = visible_map.get(doc.view.scroll_row + i) else {
@@ -42,7 +56,11 @@ pub fn render_text(
         };
         let text = doc.buffer.line(row).unwrap_or_default();
         let line_len = text.chars().count();
-        let syntax = highlight_line(&text, doc.lang);
+        let syntax = match doc.lang {
+            Language::C => highlight_c_line_with_state(&text, &mut cf_state),
+            Language::Cpp => highlight_cpp_line_with_state(&text, &mut cf_state),
+            lang => highlight_line(&text, lang),
+        };
         let line_ctx = LineRenderContext {
             row,
             search,
