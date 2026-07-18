@@ -1,9 +1,11 @@
 mod buffer;
+mod command;
 mod cursor;
 mod document;
 mod encoding;
 mod error;
 mod fold;
+mod input;
 mod selection;
 mod view;
 

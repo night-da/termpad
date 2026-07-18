@@ -1,0 +1,86 @@
+//! 编辑模式与语义命令（与原始键事件解耦）
+//!
+//! input 映射按键 → Command，handle 统一修改文档/搜索/模式
+//! EditorMode 决定 prompt/status 展示与 map_key 分支
+
+/// 编辑器 UI 状态机；切换模式时 prompt 字符串由 handle 维护
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorMode {
+    /// 默认：移动、搜索快捷键、鼠标选区
+    Normal,
+    Insert,
+    /// Alt+C：同列向下写入，见 app/edit
+    ColumnInsert,
+    SearchForward,
+    SearchBackward,
+    ReplaceInput,
+    ReplaceConfirm,
+    GotoLine,
+    OpenPath,
+    QuitConfirm,
+    CloseTabConfirm,
+}
+
+/// 可测试的编辑语义；Mouse* / Scroll* 由 app/mouse 与滚轮产生
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Command {
+    Quit,
+    QuitYes,
+    QuitNo,
+    CloseTabYes,
+    CloseTabNo,
+    Save,
+    EnterInsert,
+    EnterColumnInsert,
+    EnterNormal,
+    EnterSearchForward,
+    EnterSearchBackward,
+    EnterReplaceInput,
+    EnterGotoLine,
+    EnterOpenPath,
+    NewTab,
+    NextTab,
+    PrevTab,
+    CloseTab,
+    ToggleWhitespace,
+    ToggleLineEnding,
+    ToggleFold,
+    SearchToggleRegex,
+    SearchToggleCase,
+    MoveLeft,
+    MoveRight,
+    MoveUp,
+    MoveDown,
+    MoveHome,
+    MoveEnd,
+    PageUp,
+    PageDown,
+    SelectLeft,
+    SelectRight,
+    SelectUp,
+    SelectDown,
+    SelectHome,
+    SelectEnd,
+    SelectPageUp,
+    SelectPageDown,
+    InsertChar(char),
+    Backspace,
+    Delete,
+    Newline,
+    PromptInput(char),
+    PromptBackspace,
+    ExecutePrompt,
+    SearchInput(char),
+    SearchBackspace,
+    ExecuteSearch,
+    NextMatch,
+    PrevMatch,
+    ReplaceCurrent,
+    ReplaceAll,
+    MouseDown { row: u16, col: u16 },
+    MouseDrag { row: u16, col: u16 },
+    MouseUp,
+    ScrollUp { lines: u16 },
+    ScrollDown { lines: u16 },
+    Noop,
+}
