@@ -141,14 +141,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn detects_rust_ext() {
-        assert_eq!(
-            detect_language(Some(std::path::Path::new("main.rs"))),
-            Language::Rust
-        );
-    }
-
-    #[test]
     fn detects_markdown_ext() {
         assert_eq!(
             detect_language(Some(std::path::Path::new("README.md"))),

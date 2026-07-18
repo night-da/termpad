@@ -40,7 +40,7 @@ impl Document {
             lang,
             encoding: Encoding::Utf8,
             line_ending: LineEnding::Lf,
-            folds: FoldState,
+            folds: FoldState::default(),
             selection: Selection::default(),
         }
     }

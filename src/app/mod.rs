@@ -22,6 +22,7 @@ use crate::error::{EditorError, EditorResult};
 use crate::input::map_key;
 use crate::search::SearchState;
 use crate::view::{draw, EditorChrome, RenderContext};
+use crate::word::{find_word_occurrences, word_at_cursor};
 
 pub use terminal::run_cli;
 
@@ -84,8 +85,12 @@ impl App {
     }
 
     pub(crate) fn refresh_word_highlight(&mut self) {
-        // Commit 14 接入 word.rs 后填充 word_hits
-        self.word_hits.clear();
+        let doc = self.active_doc();
+        if let Some(word) = word_at_cursor(&doc.buffer, &doc.cursor) {
+            self.word_hits = find_word_occurrences(&doc.buffer, &word);
+        } else {
+            self.word_hits.clear();
+        }
     }
 
     /// 将 search.current 对应位置设为活动文档光标并开启 follow
