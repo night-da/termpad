@@ -67,6 +67,11 @@ impl Document {
         format!("{}{dirty}", self.display_name())
     }
 
+    pub fn toggle_fold_at_cursor(&mut self) {
+        let row = self.cursor.row;
+        self.folds.toggle(&self.buffer, row);
+    }
+
     /// 跳转到搜索/单词匹配（m.col / m.len 为行内字节）
     pub fn goto_match(&mut self, m: &crate::search::Match) {
         self.cursor.set_from_offset(
@@ -94,6 +99,16 @@ impl Document {
         self.mark_dirty();
         true
     }
+
+    pub fn convert_line_endings(&mut self, to: LineEnding) {
+        let text = self.buffer.as_text();
+        let converted = to.apply_to_text(&text);
+        self.buffer = GapBuffer::from_str(&converted);
+        self.line_ending = to;
+        self.mark_dirty();
+        self.folds.refresh(&self.buffer);
+        self.cursor.clamp(&self.buffer);
+    }
 }
 
 pub fn load_document(path: &Path) -> EditorResult<Document> {
@@ -103,7 +118,7 @@ pub fn load_document(path: &Path) -> EditorResult<Document> {
     let bytes = std::fs::read(path).map_err(EditorError::from)?;
     let (encoding, text) = Encoding::decode(&bytes).map_err(|e| EditorError::Io(e.to_string()))?;
     let line_ending = LineEnding::detect(&text);
-    Ok(Document {
+    let mut doc = Document {
         buffer: GapBuffer::from_str(&text),
         cursor: Cursor::new(),
         path: Some(path.to_path_buf()),
@@ -112,9 +127,11 @@ pub fn load_document(path: &Path) -> EditorResult<Document> {
         lang: detect_language(Some(path)),
         encoding,
         line_ending,
-        folds: FoldState,
+        folds: FoldState::default(),
         selection: Selection::default(),
-    })
+    };
+    doc.folds.refresh(&doc.buffer);
+    Ok(doc)
 }
 
 pub fn save_document(doc: &Document) -> EditorResult<()> {

@@ -110,8 +110,27 @@ pub fn draw(frame: &mut Frame, ctx: RenderContext<'_>) {
         .style(Style::default().bg(CcppTheme::EDITOR_BG))
         .render(area, frame.buffer_mut());
 
-    let chunks = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(area);
-    let (editor_area, status_area) = (chunks[0], chunks[1]);
+    let has_tabs = chrome.tab_labels.len() > 1;
+    let chunks = if has_tabs {
+        Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .split(area)
+    } else {
+        Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(area)
+    };
+
+    let (tab_area, editor_area, status_area) = if has_tabs {
+        (Some(chunks[0]), chunks[1], chunks[2])
+    } else {
+        (None, chunks[0], chunks[1])
+    };
+
+    if let Some(tabs) = tab_area {
+        gutter::render_tab_bar(frame, tabs, chrome.tab_labels, chrome.active);
+    }
 
     let visible_map = visible_line_indices(&doc.buffer, &doc.folds);
     let visible_rows = editor_area.height as usize;
