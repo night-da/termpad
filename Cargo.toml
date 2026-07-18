@@ -1,0 +1,9 @@
+[package]
+name = "termpad"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[[bin]]
+name = "termpad"
+path = "src/main.rs"
