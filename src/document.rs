@@ -1,7 +1,7 @@
-//! 单标签页文档（Commit 03 分阶段版）
+//! 单标签页文档：buffer、光标、编码、折叠及内嵌视口状态
 //!
-//! Commit 08 增加 delete_selection；Commit 09 增加 goto_match；
-//! Commit 10 将 Language 迁至 syntax；Commit 14 增加 convert_line_endings / toggle_fold
+//! 一个 Document 对应一个标签页，view 保存滚动/跟随光标等视口状态（与 crate::view 渲染逻辑分离，存在层耦合，见架构文档）
+//! load_document 全量读入 Gap Buffer；路径不存在时由 App::new 建空白标签
 
 use std::path::{Path, PathBuf};
 
@@ -19,7 +19,9 @@ pub struct Document {
     pub buffer: GapBuffer,
     pub cursor: Cursor,
     pub path: Option<PathBuf>,
+    /// 自上次保存或加载后 buffer 有改动
     pub dirty: bool,
+    /// 滚动、布局矩形、是否跟随光标等视口状态
     pub view: ViewState,
     pub lang: Language,
     pub encoding: Encoding,
@@ -62,6 +64,7 @@ impl Document {
         self.dirty = false;
     }
 
+    /// 标签栏显示名；未保存时前缀 *
     pub fn tab_label(&self) -> String {
         let dirty = if self.dirty { "*" } else { "" };
         format!("{}{dirty}", self.display_name())
@@ -101,6 +104,7 @@ impl Document {
     }
 
     pub fn convert_line_endings(&mut self, to: LineEnding) {
+        // 整 buffer 重建，避免 gap 内逐字节替换 \r\n 的边界问题
         let text = self.buffer.as_text();
         let converted = to.apply_to_text(&text);
         self.buffer = GapBuffer::from_str(&converted);
@@ -111,6 +115,7 @@ impl Document {
     }
 }
 
+/// 从磁盘读入全文；路径必须已存在（不存在时 App::new 走 new_empty）
 pub fn load_document(path: &Path) -> EditorResult<Document> {
     if !path.exists() {
         return Err(EditorError::NotFound);
@@ -134,6 +139,7 @@ pub fn load_document(path: &Path) -> EditorResult<Document> {
     Ok(doc)
 }
 
+/// 按文档 encoding / line_ending 写回 path；无 path 时返回 Io 错误
 pub fn save_document(doc: &Document) -> EditorResult<()> {
     let path = doc
         .path

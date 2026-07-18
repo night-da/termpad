@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Local launcher: prefer built binary, else `cargo run`.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -x "$ROOT/target/release/termpad" ]]; then
+  exec "$ROOT/target/release/termpad" "$@"
+fi
+if [[ -x "$ROOT/target/debug/termpad" ]]; then
+  exec "$ROOT/target/debug/termpad" "$@"
+fi
+
+exec cargo run --manifest-path "$ROOT/Cargo.toml" --quiet -- "$@"

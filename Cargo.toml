@@ -1,14 +1,14 @@
 [package]
 name = "termpad"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
+
+[[bin]]
+name = "termpad"
+path = "src/main.rs"
 
 [dependencies]
 crossterm = "0.28"
 ratatui = "0.29"
 regex = "1"
-
-[[bin]]
-name = "termpad"
-path = "src/main.rs"

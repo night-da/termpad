@@ -1,3 +1,7 @@
+//! 按行语法高亮（C/C++/Rust/Markdown），配色来自 ccpp_theme
+//!
+//! 对外入口 highlight_line；语言由 detect_language 按扩展名推断，均为单遍启发式，非编译器级语义
+
 mod cfamily;
 pub use cfamily::{
     advance_block_comment_state, highlight_c_line_with_state, highlight_cpp_line_with_state,
@@ -12,6 +16,7 @@ use ratatui::style::{Modifier, Style};
 
 use crate::theme::CcppTheme;
 
+/// 由 detect_language 按扩展名推断；无路径时为 Plain
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
     Plain,
@@ -21,6 +26,7 @@ pub enum Language {
     Markdown,
 }
 
+/// 语法分类（映射到 CcppTheme 颜色）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HighlightKind {
     Plain,
@@ -53,6 +59,7 @@ pub enum HighlightKind {
     HorizontalRule,
 }
 
+/// 语法片段；start/end 均为行内 UTF-8 字节边界
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
@@ -109,6 +116,7 @@ pub fn style_for(kind: HighlightKind) -> Style {
     }
 }
 
+/// 按语言对一行文本着色；Plain 整行无高亮
 pub fn highlight_line(line: &str, lang: Language) -> Vec<Span> {
     match lang {
         Language::Plain => vec![Span {
@@ -123,6 +131,7 @@ pub fn highlight_line(line: &str, lang: Language) -> Vec<Span> {
     }
 }
 
+/// 由路径扩展名推断语言；无路径或无扩展名时为 Plain
 pub fn detect_language(path: Option<&std::path::Path>) -> Language {
     path.and_then(|p| p.extension())
         .and_then(|e| e.to_str())

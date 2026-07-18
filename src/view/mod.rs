@@ -1,3 +1,10 @@
+//! Ratatui 渲染：布局、gutter、语法着色正文、选区与搜索高亮
+//!
+//! 坐标约定
+//! - crate::cursor::Cursor 每行使用字符列
+//! - crate::search::Match 每行使用字节偏移（与 str::find 一致）
+//! - 选区 overlay 将字符列转换为字节边界（char_col_to_byte）
+
 mod gutter;
 mod layout;
 mod status;
@@ -20,15 +27,19 @@ pub use layout::{
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EditorLayout {
+    /// 行号 + 折叠标记列
     pub gutter: Rect,
+    /// 正文区；screen_to_cursor 仅在此矩形内有效
     pub text: Rect,
 }
 
 #[derive(Debug, Clone)]
 pub struct ViewState {
+    /// 可见行窗口在 visible_line_map 中的起始下标
     pub scroll_row: usize,
     pub show_whitespace: bool,
     pub layout: EditorLayout,
+    /// follow_cursor 为 false 时，视口保持不动直至再次移动光标
     pub follow_cursor: bool,
 }
 
@@ -42,6 +53,7 @@ impl ViewState {
         }
     }
 
+    /// 按 delta 可见行滚动视口（>0 向下，<0 向上）
     pub fn scroll_by(&mut self, delta: i32, visible_rows: usize, total_visible_lines: usize) {
         if visible_rows == 0 {
             return;
@@ -63,6 +75,7 @@ impl ViewState {
         self.show_whitespace = !self.show_whitespace;
     }
 
+    /// 将光标所在逻辑行滚入可见窗口（follow_cursor 为 true 时每帧调用）
     pub fn ensure_cursor_visible(
         &mut self,
         cursor_row: usize,
@@ -101,6 +114,7 @@ pub struct RenderContext<'a> {
     pub chrome: EditorChrome<'a>,
 }
 
+/// 一帧 TUI：标签栏 → gutter+正文 → 状态栏；更新 doc.view.layout
 pub fn draw(frame: &mut Frame, ctx: RenderContext<'_>) {
     let doc = ctx.doc;
     let chrome = ctx.chrome;
@@ -184,6 +198,7 @@ mod tests {
         let mut view = ViewState::new();
         view.scroll_by(5, 10, 50);
         assert_eq!(view.scroll_row, 5);
+        assert!(!view.follow_cursor);
         view.scroll_by(-100, 10, 50);
         assert_eq!(view.scroll_row, 0);
         view.scroll_by(100, 10, 50);

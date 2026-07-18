@@ -1,6 +1,7 @@
-//! 正文渲染：语法着色 + 搜索/选区底色叠加 + 硬件光标
+//! 正文渲染：语法着色 + 搜索/选区/单词底色叠加 + 硬件光标
 //!
-//! 底色优先级（后者覆盖前者）：当前搜索匹配 → 其他匹配 → 选区 → 纯语法
+//! 底色优先级（后者覆盖前者）：当前搜索匹配 → 其他匹配 → 选区 → 单词高亮 → 纯语法
+//! 语法与 overlay 均按字节分段，选区输入为字符列，需先转换
 
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -28,6 +29,7 @@ struct LineRenderContext<'a> {
     syntax: &'a [crate::syntax::Span],
 }
 
+/// 绘制可见行并叠加搜索/选区/单词底色；最后设置硬件光标位置
 pub fn render_text(
     frame: &mut Frame,
     area: Rect,
@@ -82,6 +84,7 @@ pub fn render_text(
     let inner = block.inner(area);
     Paragraph::new(lines).render(inner, frame.buffer_mut());
 
+    // 光标不在视口内时不调用 set_cursor_position，ratatui 会隐藏硬件光标
     let Some(map_pos) = visible_map.iter().position(|&r| r == doc.cursor.row) else {
         return;
     };
@@ -96,6 +99,7 @@ pub fn render_text(
     frame.set_cursor_position((cursor_x, cursor_y));
 }
 
+/// 合并 syntax / 搜索 / 选区 / 单词高亮的字节断点，逐段取语法色再叠底色
 fn build_line_spans(raw: &str, ctx: &LineRenderContext<'_>) -> Vec<TextSpan<'static>> {
     let sel_cols = ctx
         .selection
@@ -162,6 +166,7 @@ fn char_col_to_byte(line: &str, col: usize) -> usize {
         .unwrap_or(line.len())
 }
 
+/// 按优先级为字节段选择背景色（见模块头说明）
 fn segment_style(
     start: usize,
     end: usize,
@@ -202,10 +207,7 @@ fn segment_style(
     style.bg(CcppTheme::EDITOR_BG)
 }
 
-fn segment_in_match(start: usize, end: usize, row: usize, m: Option<&Match>) -> bool {
-    m.is_some_and(|m| m.row == row && ranges_overlap(start, end, m.col, m.col + m.len))
-}
-
+/// 选区用字符列，分段用字节列：把段边界换算成字符列再比较相交
 fn segment_in_selection(
     byte_start: usize,
     byte_end: usize,
@@ -221,6 +223,10 @@ fn segment_in_selection(
     let seg_start = line[..byte_start.min(line.len())].chars().count();
     let seg_end = line[..byte_end.min(line.len())].chars().count();
     seg_start < sel_end && sel_start < seg_end
+}
+
+fn segment_in_match(start: usize, end: usize, row: usize, m: Option<&Match>) -> bool {
+    m.is_some_and(|m| m.row == row && ranges_overlap(start, end, m.col, m.col + m.len))
 }
 
 fn ranges_overlap(a_start: usize, a_end: usize, b_start: usize, b_end: usize) -> bool {
