@@ -3,6 +3,7 @@ pub use cfamily::{
     advance_block_comment_state, highlight_c_line_with_state, highlight_cpp_line_with_state,
     CfamilyHighlightState,
 };
+mod markdown;
 mod merge;
 mod rust;
 mod scan;
@@ -17,6 +18,7 @@ pub enum Language {
     C,
     Cpp,
     Rust,
+    Markdown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +42,15 @@ pub enum HighlightKind {
     Escape,
     Label,
     LanguageSpecial,
+    Heading,
+    Bold,
+    Italic,
+    Code,
+    Link,
+    LinkUrl,
+    ListMark,
+    Quote,
+    HorizontalRule,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +91,21 @@ pub fn style_for(kind: HighlightKind) -> Style {
         HighlightKind::LanguageSpecial => Style::default()
             .fg(CcppTheme::LANGUAGE_SPECIAL)
             .add_modifier(Modifier::ITALIC),
+        HighlightKind::Heading => Style::default()
+            .fg(CcppTheme::HEADING)
+            .add_modifier(Modifier::BOLD),
+        HighlightKind::Bold => Style::default().fg(CcppTheme::BOLD),
+        HighlightKind::Italic => Style::default()
+            .fg(CcppTheme::ITALIC)
+            .add_modifier(Modifier::ITALIC),
+        HighlightKind::Code => Style::default().fg(CcppTheme::CODE),
+        HighlightKind::Link => Style::default().fg(CcppTheme::LINK),
+        HighlightKind::LinkUrl => Style::default().fg(CcppTheme::LINK_URL),
+        HighlightKind::ListMark => Style::default().fg(CcppTheme::LIST_MARK),
+        HighlightKind::Quote => Style::default()
+            .fg(CcppTheme::QUOTE)
+            .add_modifier(Modifier::ITALIC),
+        HighlightKind::HorizontalRule => Style::default().fg(CcppTheme::HORIZONTAL_RULE),
     }
 }
 
@@ -93,6 +119,7 @@ pub fn highlight_line(line: &str, lang: Language) -> Vec<Span> {
         Language::C => cfamily::highlight_c_line(line),
         Language::Cpp => cfamily::highlight_cpp_line(line),
         Language::Rust => rust::highlight_rust_line(line),
+        Language::Markdown => markdown::highlight_markdown_line(line),
     }
 }
 
@@ -103,6 +130,7 @@ pub fn detect_language(path: Option<&std::path::Path>) -> Language {
             "c" | "h" => Language::C,
             "cpp" | "cxx" | "cc" | "hpp" | "hxx" => Language::Cpp,
             "rs" => Language::Rust,
+            "md" | "markdown" => Language::Markdown,
             _ => Language::Plain,
         })
         .unwrap_or(Language::Plain)
@@ -117,6 +145,14 @@ mod tests {
         assert_eq!(
             detect_language(Some(std::path::Path::new("main.rs"))),
             Language::Rust
+        );
+    }
+
+    #[test]
+    fn detects_markdown_ext() {
+        assert_eq!(
+            detect_language(Some(std::path::Path::new("README.md"))),
+            Language::Markdown
         );
     }
 

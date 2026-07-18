@@ -29,6 +29,7 @@ pub fn render_status(
         Language::C => "C",
         Language::Cpp => "C++",
         Language::Rust => "Rust",
+        Language::Markdown => "Markdown",
     };
     let meta = format!(
         " Ln {}, Col {} | {} | {} | {}",
