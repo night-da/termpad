@@ -70,6 +70,14 @@ impl Document {
         format!("{}{dirty}", self.display_name())
     }
 
+    /// 跳转到搜索/单词匹配（m.col / m.len 为行内字节）
+    pub fn goto_match(&mut self, m: &crate::search::Match) {
+        self.cursor.set_from_offset(
+            &self.buffer,
+            self.buffer.line_byte_col_to_offset(m.row, m.col),
+        );
+    }
+
     /// 删除当前选区文本；无选区或空选区返回 false
     pub fn delete_selection(&mut self) -> bool {
         let head = self.cursor;

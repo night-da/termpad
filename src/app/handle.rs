@@ -27,6 +27,28 @@ impl App {
                 self.prompt.clear();
                 self.status = "NORMAL".into();
             }
+            Command::EnterSearchForward => {
+                self.mode = EditorMode::SearchForward;
+                self.search.forward = true;
+                self.search.clear();
+                self.prompt = "/".into();
+                self.status = "Ctrl+R regex  Ctrl+I icase".into();
+            }
+            Command::EnterSearchBackward => {
+                self.mode = EditorMode::SearchBackward;
+                self.search.forward = false;
+                self.search.clear();
+                self.prompt = "?".into();
+                self.status = "Ctrl+R regex  Ctrl+I icase".into();
+            }
+            Command::SearchToggleRegex => {
+                self.search.toggle_regex();
+                self.status = format!("Search: {}", self.search.options_label());
+            }
+            Command::SearchToggleCase => {
+                self.search.toggle_case_insensitive();
+                self.status = format!("Search: {}", self.search.options_label());
+            }
             Command::MoveLeft => self.move_cursor(false, |c, b| c.move_left(b)),
             Command::MoveRight => self.move_cursor(false, |c, b| c.move_right(b)),
             Command::MoveUp => self.move_cursor(false, |c, b| c.move_up(b)),
@@ -119,6 +141,32 @@ impl App {
                 doc.cursor.row += 1;
                 doc.cursor.col = 0;
                 doc.mark_dirty();
+            }
+            Command::SearchInput(ch) => {
+                self.search.query.push(ch);
+                self.prompt.push(ch);
+            }
+            Command::SearchBackspace => {
+                self.search.query.pop();
+                self.prompt.pop();
+            }
+            Command::ExecuteSearch => {
+                let i = self.active;
+                self.search.compile(&self.documents[i].buffer);
+                self.goto_match();
+                self.mode = EditorMode::Normal;
+                self.prompt.clear();
+                self.status = format!("Found {} matches", self.search.matches.len());
+            }
+            Command::NextMatch => {
+                self.search.forward = true;
+                self.search.next_match();
+                self.goto_match();
+            }
+            Command::PrevMatch => {
+                self.search.forward = false;
+                self.search.next_match();
+                self.goto_match();
             }
             _ => {}
         }

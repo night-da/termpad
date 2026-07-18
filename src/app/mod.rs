@@ -69,6 +69,15 @@ impl App {
         &mut self.documents[self.active]
     }
 
+    /// 将 search.current 对应位置设为活动文档光标并开启 follow
+    pub(crate) fn goto_match(&mut self) {
+        if let Some(m) = self.search.current_match().cloned() {
+            let doc = self.active_doc_mut();
+            doc.view.follow_cursor = true;
+            doc.goto_match(&m);
+        }
+    }
+
     pub fn run(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
